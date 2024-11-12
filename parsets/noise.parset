@@ -1,0 +1,29 @@
+msin = 
+skymodel = empty.skymodel
+
+[tec]
+operation = TEC
+method = turbulence
+
+[faraday]
+operation = FARADAY
+
+[clock]
+operation = CLOCK
+
+[polmisalign]
+operation = POLMISALIGN
+
+[beam]
+operation = BEAM
+mode = default
+
+[predict]
+operation = PREDICT
+outputcolumn = CORRUPTED_DATA
+resetWeights = True
+predictType = h5parmpredict
+
+[noise]
+operation = NOISE
+outputColumn = CORRUPTED_DATA
