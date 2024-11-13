@@ -1,12 +1,13 @@
 import sys, os, glob, argparse
 import numpy as np
-from synth_libs import lib_ms, lib_img, lib_log, lib_util, lib_synthetics
+from synth_libs import lib_ms, lib_img, lib_log, lib_util
 import warnings
 import astropy
 from astropy.cosmology import FlatLambdaCDM
 import yt
 from yt.units import gauss, g, cm, Hz, W, m, Jy, erg, s, G
 from astropy.io import fits
+import math
 
 logger_obj = lib_log.Logger('synthetics')
 logger = lib_log.logger
@@ -214,6 +215,8 @@ with w.if_todo('predict'):
     sch.run(check=True)
 
 if not nocorrupt:
+
+    os.system(f'cp {synth}/parsets/empty.skymodel .')
 
     if recorrupt:
         MSs_empty.deletecol('CORRUPTED_DATA')
