@@ -7,8 +7,8 @@ Images of the clean and corrupted visibilities are also automatically produced.
 
 ## How to install
 
-The code currently works through a singularity file which contains all the required packages. Only yt and LoSiTo needs to be installed
-separately, as it is not included in the container.
+The code currently works through a singularity file which contains all the required packages. Only yt and LoSiTo (https://github.com/darafferty/losito)
+needs to be installed separately, as they are not included in the container.
 
 ## How to use
 
@@ -17,6 +17,7 @@ Before starting, it is necessary to add the library directory to the PYTHONPATH:
 
 `export PYTHONPATH=/path/to/Synthetics/synth_libs:$PYTHONPATH`
 
+You may also want to add the Synthetics directory to PATH.
 The code works through a simple command line which provides all the required information to produce the synthetic observations.
 An example command could be:
 
@@ -32,7 +33,7 @@ These three inputs represent:
 
 
 These are the only required inputs, every other option you may add to the command line already has a default value and may be changed
-only when needed. These include:
+if needed. These include:
 
 `--name`: name of the output .MS file(s). Default is `simulated`. 
 
@@ -55,7 +56,7 @@ only when needed. These include:
 `--nocorrupt`: If this option is given, no corruption is applied to the visibilities.
 
 `--corruption_type `: Type of corruption to apply to visibilities. Options are: `tec, tec_fr, tec_fr_clock, polmisalign, beamcorrupt, 
-noise or all`. In the current version of the code, these corruptions are in 'ascending' order: each corruption also includes all the 
+noise, all`. In the current version of the code, these corruptions are in 'ascending' order: each corruption also includes all the 
 previous ones (e.g. polmisalign will include TEC, Faraday roation and clock drifts). Default is `all`.
 
 `--recorrupt`: Use this option if you have already finished a run and you just want to change the type of corruption to apply to the 

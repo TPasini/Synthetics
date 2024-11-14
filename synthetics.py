@@ -221,6 +221,15 @@ if not nocorrupt:
     if recorrupt:
         MSs_empty.deletecol('CORRUPTED_DATA')
 
+        with open('synthetics.walker', 'r') as file:
+            lines = file.readlines()
+
+        filtered_lines = [line for line in lines if
+                          not (line.startswith('corrupt') or line.startswith('corrupted_image'))]
+
+        with open('synthetics.walker', 'w') as file:
+            file.writelines(filtered_lines)
+
     MSs_empty.addcol('CORRUPTED_DATA', 'MODEL_DATA', log='$nameMS_addcol.log')
 
     # I need to update the msin of the parset file at each run, in losito there is no way to give it in the command line...
