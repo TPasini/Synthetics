@@ -153,7 +153,7 @@ with w.if_todo('produce_synchrotron_fits'):
     emissivity_data = frb["gas", "synchrotron_emissivity"].v
 
     hdu = fits.PrimaryHDU(emissivity_data)
-    hdu.header['BUNIT'] = 'ERG/S/CM**3'
+    hdu.header['BUNIT'] = 'ERG/S/CM**2'
 
     hdu.writeto('images/synchrotron_emissivity.fits', overwrite=True)
 
