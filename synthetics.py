@@ -1,3 +1,22 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+#
+# Copyright (C) 2024 - Thomas Pasini
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+
 import sys, os, glob, argparse
 import numpy as np
 from synth_libs import lib_ms, lib_img, lib_log, lib_util
@@ -22,6 +41,7 @@ scale = '3asec'
 
 ##################################################################
 
+#This is just a very general and simple synchrotron function where we assume constant density of relativistic electrons.
 def _synchrotron_emissivity(field, data):
     #n_e = data["gas", "density"]/9.11e-28 # Converting density into numeric density #TODO this is gas density, we need the relativistic electron density
     n_e = 1e-5 * cm**-3
@@ -37,7 +57,7 @@ def convert_coordinates(lat_deg, lon_deg):
 
 ##################################################################
 
-parser = argparse.ArgumentParser(description='Create synthetic .MS file which contains the visibilities of the synchrotron emission derived from a simulation cube, as seen by the LOFAR telescope.')
+parser = argparse.ArgumentParser(description='Create synthetic .MS file(s) which contain the mock visibilities of the synchrotron emission derived from a simulation cube, as detected by the LOFAR telescope.')
 parser.add_argument('-p', '--path', dest='path', action='store', default='', type=str, help='Path where to look for the simulation cube.')
 parser.add_argument('-synth', '--synth', dest='synthpath', action='store', default='', type=str, help='Path to the Synthetics directory cloned from GitHub. Example: /path/to/Synthetics/')
 parser.add_argument('-radec', '--radec', dest='radec', nargs=2, type=float, default=None, help='RA/DEC of the phase centre of the generated .MS file.')
@@ -217,6 +237,9 @@ with w.if_todo('clean_image'):
 
 if not nocorrupt:
 
+    if not nocorrupt and not corrtype or corrtype == ['all']:
+        corrtype = ['tec', 'fr', 'clock', 'polmisalign', 'beam', 'noise', 'bandpass']
+
     corr_list = corrtype_str = "_".join(corrtype)
 
     if recorrupt:
@@ -238,7 +261,7 @@ if not nocorrupt:
     with w.if_todo('create_skymodel'):
     # Run PyBDSF to get a good sky model to use for corruptions
         img = bdsf.process_image('images/clean-MFS-image.fits', atrous_do=True, rms_map=False, mean_map='zero')
-        img.write_catalog(outfile=f'skymodels/{corr_list}.skymodel', catalog_type='gaul', format='bbs')
+        img.write_catalog(outfile=f'skymodels/{corr_list}.skymodel', catalog_type='gaul', format='bbs', clobber=True)
         img.export_image(outfile=f'skymodels/{corr_list}.fits', img_type='gaus_model')
 
     # I need to update the msin of the parset file at each run, in losito there is no way to give it in the command line...

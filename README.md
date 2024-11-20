@@ -1,18 +1,19 @@
 # Synthetics
 
-This project aims to provide an end-to-end pipeline to generate a set of synthetic LOFAR observations of a galaxy cluster, 
+The original aim of this project is to provide an end-to-end pipeline to generate a set of synthetic LOFAR observations of a galaxy cluster, 
 starting from a simulation cube of the cluster thermal emission. The output .MS file(s) contains the mock visibilities and,
 if needed, a column in which the visibilities have been corrupted by various effects, such as TEC, clock drifts, beam etc.
-Images of the clean and corrupted visibilities are also automatically produced.
+Images of the clean and corrupted visibilities are also automatically produced. 
 
 ## How to install
 
 The code currently works through a singularity file which contains all the required packages. Only yt and LoSiTo (https://github.com/darafferty/losito)
-needs to be installed separately, as they are not included in the container.
+needs to be installed separately, as they are not included in the container. If you wish to get the singularity image, please get in touch
+with the developers.
 
 ## How to use
 
-The preferred way is to use the singularity as described above, enter in the singularity and move to your working directory.
+The preferred way is to use the singularity as described above. Enter in the singularity and move to your working directory.
 Before starting, it is necessary to add the library directory to the PYTHONPATH:
 
 `export PYTHONPATH=/path/to/Synthetics/synth_libs:$PYTHONPATH`
@@ -55,18 +56,17 @@ if needed. These include:
 
 `--nocorrupt`: If this option is given, no corruption is applied to the visibilities.
 
-`--corruption_type `: Type of corruption to apply to visibilities. Options are: `tec, tec_fr, tec_fr_clock, polmisalign, beamcorrupt, 
-noise, all`. In the current version of the code, these corruptions are in 'ascending' order: each corruption also includes all the 
-previous ones (e.g. polmisalign will include TEC, Faraday roation and clock drifts). Default is `all`.
+`--corruption_type`: Type of corruption to apply to visibilities. Options are: `tec, fr, clock, polmisalign, beam, 
+noise, bandpass, all`. In the current version of the code, the user can specify the corruptions they wish to apply by simply separating them with spaces
+(e.g. `--corruption_type tec fr`). If no `--corruption_type` is given as input, all types of corruptions are applied (unless `--nocorrupt` is specified).
 
 `--recorrupt`: Use this option if you have already finished a run and you just want to change the type of corruption to apply to the 
 visibilities.
 
-
 ## Contributions
 
 Most of the libraries used in this code are slightly modified versions of the libraries from `LiLF` (https://github.com/revoltek/LiLF). 
-It also makes great use of `LoSiTo` (https://github.com/darafferty/losito). All credits go to their developers.
+It also makes large use of `LoSiTo` (https://github.com/darafferty/losito) and `PyBDSF` (https://github.com/lofar-astron/PyBDSF). All credits go to their developers.
 
 
  
