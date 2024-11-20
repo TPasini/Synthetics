@@ -8,6 +8,8 @@ import yt
 from yt.units import gauss, g, cm, Hz, W, m, Jy, erg, s, G
 from astropy.io import fits
 import math
+import bdsf
+from itertools import combinations
 
 logger_obj = lib_log.Logger('synthetics')
 logger = lib_log.logger
@@ -49,7 +51,7 @@ parser.add_argument('--chanpersb', dest='chanpersb', type=int, default=1, help='
 parser.add_argument('--chout', dest='chout', type=int, default=6, help='Number of output channel images in WSClean. Default is 6.')
 parser.add_argument('--imsize', dest='imsize', type=int, default=1024, help='Pixel size of images. Default is 1024.')
 parser.add_argument('--nocorrupt', dest='nocorrupt', action='store_true', help='Whether to corrupt the dataset with ionospheric delays.')
-parser.add_argument('--corruption_type', dest='corrtype', action='store', default='all', type=str, help='Type of corruption to apply to the dataset. Can be set to "tec", "tec_fr", "tec_fr_clock", "polmisalign", "beamcorrupt", "noise" or "all", in ascending order (i.e. the latter includes all the formers. Default is "all".')
+parser.add_argument('--corruption_type', dest='corrtype', action='store', nargs='+', default='all', type=str)#, help='Type of corruption to apply to the dataset. Can be set to "tec", "tec_fr", "tec_fr_clock", "polmisalign", "beamcorrupt", "noise" or "all", in ascending order (i.e. the latter includes all the formers. Default is "all".')
 parser.add_argument('--recorrupt', dest='recorrupt', action='store_true', help='Use this if you just want to change the type of corruption to apply, without re-running everything else.')
 
 args = parser.parse_args()
@@ -72,9 +74,17 @@ recorrupt = args.recorrupt
 #Since we allow coordinates in degrees, we need to convert to radians for synthms
 coords = convert_coordinates(deg_coords[0], deg_coords[1])
 
-if corrtype not in ["tec", "tec_fr", "tec_fr_clock", "polmisalign", "beamcorrupt", "noise", "all"]:
-    logger.error('Unknown corruption type. Possible values are tec, tec_fr, tec_fr_clock, polmisalign, beamcorrupt, noise or all.')
+valid_elements = ["tec", "fr", "clock", "polmisalign", "beamcorrupt", "noise", "all"]
+
+valid_combinations = set()
+for r in range(1, len(valid_elements) + 1):  # Combina da 1 elemento fino a tutti
+    valid_combinations.update(tuple(sorted(combo)) for combo in combinations(valid_elements, r))
+
+if tuple(sorted(corrtype)) not in valid_combinations:
+    logger.error(f'In {corrtype} there is an unknown corruption type. Possible values are combinations of tec, fr, clock, polmisalign, beamcorrupt, noise, or all.')
     sys.exit()
+else:
+    logger.info(f'Corruptions for {corrtype} will be applied to the observation.')
 
 if not pathdir:
     logger.error('Provide a path (-p) where to look for the simulation cube.')
@@ -88,29 +98,19 @@ if not synth:
     logger.error('Provide the path to the Synthetics directory cloned from GitHub.')
     sys.exit()
 
-if corrtype == 'tec':
-    parset = f'{synth}/parsets/tec.parset'
-elif corrtype == 'tec_fr':
-    parset = f'{synth}/parsets/tec_fr.parset'
-elif corrtype == 'tec_fr_clock':
-    parset = f'{synth}/parsets/tec_fr_clock.parset'
-elif corrtype == 'polmisalign':
-    parset = f'{synth}/parsets/polmisalign.parset'
-elif corrtype == 'beamcorrupt':
-    parset = f'{synth}/parsets/beamcorrupt.parset'
-elif corrtype == 'noise':
-    parset = f'{synth}/parsets/noise.parset'
-elif corrtype == 'all':
-    parset = f'{synth}/parsets/bandpass.parset'
 
 with w.if_todo('cleaning'):
     logger.info('Preparing the environment...')
     lib_util.check_rm('data')
     lib_util.check_rm('images')
+    lib_util.check_rm('models')
+    lib_util.check_rm('skymodels')
+    lib_util.check_rm('parsets')
     os.makedirs('data')
     os.makedirs('images')
-    lib_util.check_rm('models')
     os.makedirs('models')
+    os.makedirs('skymodels')
+    os.makedirs('parsets')
 
 with w.if_todo('generate_MS'):
     logger.info('Generating empty .MS files...')
@@ -128,7 +128,7 @@ with w.if_todo('empty_image'):
           log='wsclean-empty.log', commandType='wsclean', processors='max')
     sch.run(check=True)
 
-with w.if_todo('produce_synchrotron_fits'):
+with w.if_todo('produce_injection_fits'):
 
     ds = yt.load(pathdir)
 
@@ -208,6 +208,7 @@ with w.if_todo('predict'):
 
     MSs_empty.addcol('CLEAN_DATA', 'MODEL_DATA', log='$nameMS_addcol.log')
 
+with w.if_todo('clean_image'):
     logger.info(f'Producing image with no corruptions...')
     sch.add(f'wsclean -size {imsize} {imsize} -name images/clean -scale {scale} -data-column CLEAN_DATA -weight briggs -1 -circular-beam -niter 100000 -no-update-model-required -mgain 0.6'
         f' -baseline-averaging 10 -join-channels -fit-spectral-pol 3 -channels-out {chout} data/{name}*.MS',
@@ -216,7 +217,7 @@ with w.if_todo('predict'):
 
 if not nocorrupt:
 
-    os.system(f'cp {synth}/parsets/empty.skymodel .')
+    corr_list = corrtype_str = "_".join(corrtype)
 
     if recorrupt:
         MSs_empty.deletecol('CORRUPTED_DATA')
@@ -232,29 +233,74 @@ if not nocorrupt:
 
     MSs_empty.addcol('CORRUPTED_DATA', 'MODEL_DATA', log='$nameMS_addcol.log')
 
-    # I need to update the msin of the parset file at each run, in losito there is no way to give it in the command line...
-    with open(parset, "r") as file:
-        parset_content = file.readlines()
-
     msin_path = f"data/{name}*.MS"
-    new_parset_content = []
-    for line in parset_content:
-        if line.startswith("msin"):
-            new_parset_content.append(f"msin = {msin_path}\n")
-        else:
-            new_parset_content.append(line)
 
-    with open(parset, "w") as file:
+    with w.if_todo('create_skymodel'):
+    # Run PyBDSF to get a good sky model to use for corruptions
+        img = bdsf.process_image('images/clean-MFS-image.fits', atrous_do=True, rms_map=False, mean_map='zero')
+        img.write_catalog(outfile=f'skymodels/{corr_list}.skymodel', catalog_type='gaul', format='bbs')
+        img.export_image(outfile=f'skymodels/{corr_list}.fits', img_type='gaus_model')
+
+    # I need to update the msin of the parset file at each run, in losito there is no way to give it in the command line...
+    with open(f'parsets/{corr_list}.parset', "w") as file:
+        new_parset_content = []
+        new_parset_content.append(f"msin = {msin_path}\n")
+        new_parset_content.append(f"skymodel = skymodels/{corr_list}.skymodel\n")
+        new_parset_content.append(f"\n")
+
+        corruption_parset_content = []
+        if 'tec' in corrtype:
+            corruption_parset_content.append(f"[tec]\n")
+            corruption_parset_content.append(f"operation = TEC\n")
+            corruption_parset_content.append(f"method = turbulence\n")
+            corruption_parset_content.append(f"\n")
+        if 'fr' in corrtype:
+            corruption_parset_content.append(f"[faraday]\n")
+            corruption_parset_content.append(f"operation = FARADAY\n")
+            corruption_parset_content.append(f"\n")
+        if 'clock' in corrtype:
+            corruption_parset_content.append(f"[clock]\n")
+            corruption_parset_content.append(f"operation = CLOCK\n")
+            corruption_parset_content.append(f"\n")
+        if 'polmisalign' in corrtype:
+            corruption_parset_content.append(f"[polmisalign]\n")
+            corruption_parset_content.append(f"operation = POLMISALIGN\n")
+            corruption_parset_content.append(f"\n")
+        if 'beam' in corrtype:
+            corruption_parset_content.append(f"[beam]\n")
+            corruption_parset_content.append(f"operation = BEAM\n")
+            corruption_parset_content.append(f"mode = default\n")
+            corruption_parset_content.append(f"\n")
+
+        corruption_parset_content.append(f"[predict]\n")
+        corruption_parset_content.append(f"operation = PREDICT\n")
+        corruption_parset_content.append(f"outputcolumn = CORRUPTED_DATA\n")
+        corruption_parset_content.append(f"resetWeights = True\n")
+        corruption_parset_content.append(f"predictType = h5parmpredict\n")
+        corruption_parset_content.append(f"\n")
+
+        if 'noise' in corrtype:
+            corruption_parset_content.append(f"[noise]\n")
+            corruption_parset_content.append(f"operation = NOISE\n")
+            corruption_parset_content.append(f"outputcolumn = CORRUPTED_DATA\n")
+            corruption_parset_content.append(f"\n")
+        if 'bandpass' in corrtype:
+            corruption_parset_content.append(f"[bandpass]\n")
+            corruption_parset_content.append(f"operation = BANDPASS\n")
+            corruption_parset_content.append(f"method = ms\n")
+            corruption_parset_content.append(f"\n")
+
         file.writelines(new_parset_content)
+        file.writelines(corruption_parset_content)
 
     with w.if_todo('corrupt'):
         logger.info(f'Corrupting visibilities...')
-        sch.add(f'losito {parset}')
+        sch.add(f'losito parsets/{corr_list}.parset')
         sch.run(check=True)
 
     with w.if_todo('corrupted_image'):
         logger.info(f'Producing image with {corrtype} corruptions...')
-        sch.add(f'wsclean -size {imsize} {imsize} -name images/corrupted_{corrtype} -scale {scale} -data-column CORRUPTED_DATA -weight briggs -1 -circular-beam -niter 100000 -no-update-model-required -mgain 0.6'
+        sch.add(f'wsclean -size {imsize} {imsize} -name images/corrupted_{corr_list} -scale {scale} -data-column CORRUPTED_DATA -weight briggs -1 -circular-beam -niter 100000 -no-update-model-required -mgain 0.6'
             f' -baseline-averaging 10 -join-channels -fit-spectral-pol 3 -channels-out {chout} data/{name}*.MS',
             log='wsclean-corrupted.log', commandType='wsclean', processors='max')
         sch.run(check=True)
