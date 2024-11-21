@@ -118,6 +118,10 @@ if not synth:
     logger.error('Provide the path to the Synthetics directory cloned from GitHub.')
     sys.exit()
 
+if chanpersb > 4:
+    logger.error('LoSiTo supports a maximum of 4 channels per subband.')
+    sys.exit()
+
 
 with w.if_todo('cleaning'):
     logger.info('Preparing the environment...')
