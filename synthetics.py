@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#/usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
 # Copyright (C) 2024 - Thomas Pasini
@@ -19,7 +19,7 @@
 
 import sys, os, glob, argparse
 import numpy as np
-from synth_libs import lib_ms, lib_img, lib_log, lib_util
+from synth_libs import lib_ms, lib_log, lib_util
 import warnings
 import astropy
 from astropy.cosmology import FlatLambdaCDM
@@ -67,11 +67,11 @@ parser.add_argument('--duration', dest='duration', type=float, default=1, help='
 parser.add_argument('--station', dest='station', type=str, default='LBA', help='Whether to use LBA or HBA. Default is LBA.')
 parser.add_argument('--version', dest='version', type=int, default=1, help='Whether to use LOFAR or LOFAR 2.0. Default is LOFAR. Use 2 for LOFAR 2.0')
 parser.add_argument('--freqrange', dest='freqrange', nargs=2, type=float, default=(42e6, 66e6), help='Frequency range of the generated .MS file in Hz.')
-parser.add_argument('--chanpersb', dest='chanpersb', type=int, default=1, help='Number of channels per sub-band. Default is 1.')
+parser.add_argument('--chanpersb', dest='chanpersb', type=int, default=1, help='Number of channels per sub-band. Default is 1. A maximum of 4 is supported by LoSiTo.')
 parser.add_argument('--chout', dest='chout', type=int, default=6, help='Number of output channel images in WSClean. Default is 6.')
 parser.add_argument('--imsize', dest='imsize', type=int, default=1024, help='Pixel size of images. Default is 1024.')
 parser.add_argument('--nocorrupt', dest='nocorrupt', action='store_true', help='Whether to corrupt the dataset with ionospheric delays.')
-parser.add_argument('--corruption_type', dest='corrtype', action='store', nargs='+', default='all', type=str)#, help='Type of corruption to apply to the dataset. Can be set to "tec", "tec_fr", "tec_fr_clock", "polmisalign", "beamcorrupt", "noise" or "all", in ascending order (i.e. the latter includes all the formers. Default is "all".')
+parser.add_argument('--corruption_type', dest='corrtype', action='store', nargs='+', default='all', type=str, help='Type of corruption to apply to the dataset. Can be set to tec, fr, clock, polmisalign, beamcorrupt, noise or all, separated by spaces. Default is all.')
 parser.add_argument('--recorrupt', dest='recorrupt', action='store_true', help='Use this if you just want to change the type of corruption to apply, without re-running everything else.')
 
 args = parser.parse_args()
