@@ -1,4 +1,4 @@
-#/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
 # Copyright (C) 2024 - Thomas Pasini
@@ -264,7 +264,7 @@ if not nocorrupt:
 
     with w.if_todo('create_skymodel'):
     # Run PyBDSF to get a good sky model to use for corruptions
-        img = bdsf.process_image('images/clean-MFS-image.fits', atrous_do=True, rms_map=False, mean_map='zero')
+        img = bdsf.process_image('images/clean-MFS-image.fits', rms_map=False, mean_map='zero', atrous_do = True)
         img.write_catalog(outfile=f'skymodels/{corr_list}.skymodel', catalog_type='gaul', format='bbs', clobber=True)
         img.export_image(outfile=f'skymodels/{corr_list}.fits', img_type='gaus_model')
 
