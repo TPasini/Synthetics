@@ -266,7 +266,7 @@ if not nocorrupt:
     # Run PyBDSF to get a good sky model to use for corruptions
         img = bdsf.process_image('images/clean-MFS-image.fits', rms_map=False, mean_map='zero', atrous_do = True)
         img.write_catalog(outfile=f'skymodels/{corr_list}.skymodel', catalog_type='gaul', format='bbs', clobber=True)
-        img.export_image(outfile=f'skymodels/{corr_list}.fits', img_type='gaus_model')
+        img.export_image(outfile=f'skymodels/{corr_list}.fits', img_type='gaus_model', clobber=True)
 
     # I need to update the msin of the parset file at each run, in losito there is no way to give it in the command line...
     with open(f'parsets/{corr_list}.parset', "w") as file:
