@@ -2,7 +2,7 @@
 
 The original aim of this project is to provide an end-to-end pipeline to generate a set of synthetic LOFAR observations of a galaxy cluster, 
 starting from a simulation cube of the cluster thermal emission. The output .MS file(s) contains the mock visibilities and,
-if needed, a column in which the visibilities have been corrupted by various effects, such as TEC, clock drifts, beam etc.
+unless specified otherwise, a column in which the visibilities have been corrupted by various effects, such as TEC, clock drifts, beam etc.
 Images of the clean and corrupted visibilities are also automatically produced. 
 
 ## How to install
@@ -18,7 +18,12 @@ Before starting, it is necessary to add the library directory to the PYTHONPATH:
 
 `export PYTHONPATH=/path/to/Synthetics/synth_libs:$PYTHONPATH`
 
-You may also want to add the Synthetics directory to PATH.
+For LoSiTo to work correctly, one should also add:
+
+`export PATH=/path/to/losito/bin:$PATH`
+
+`export PYTHONPATH=/path/to/losito:$PYTHONPATH`
+
 The code works through a simple command line which provides all the required information to produce the synthetic observations.
 An example command could be:
 

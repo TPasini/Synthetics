@@ -29,12 +29,7 @@ from astropy.io import fits
 import math
 import bdsf
 from itertools import combinations
-
-logger_obj = lib_log.Logger('synthetics')
-logger = lib_log.logger
-sch = lib_util.Scheduler(log_dir=logger_obj.log_dir, dry = False)
-w = lib_util.Walker('synthetics.walker')
-warnings.filterwarnings('ignore', category=astropy.wcs.FITSFixedWarning)
+from synth_libs.lib_util import create_region
 
 cosmo = FlatLambdaCDM(H0=70, Om0=0.3)
 scale = '3asec'
@@ -73,6 +68,8 @@ parser.add_argument('--imsize', dest='imsize', type=int, default=1024, help='Pix
 parser.add_argument('--nocorrupt', dest='nocorrupt', action='store_true', help='Whether to corrupt the dataset with ionospheric delays.')
 parser.add_argument('--corruption_type', dest='corrtype', action='store', nargs='+', default='all', type=str, help='Type of corruption to apply to the dataset. Can be set to tec, fr, clock, polmisalign, beamcorrupt, noise or all, separated by spaces. Default is all.')
 parser.add_argument('--recorrupt', dest='recorrupt', action='store_true', help='Use this if you just want to change the type of corruption to apply, without re-running everything else.')
+parser.add_argument('--skymodel_bdsf', dest='skymodel_bdsf', action='store_true', help='Use PyBDSF to create a sky model for corruptions, instead of predicting from the initial .fits image. Only advanced users.')
+
 
 args = parser.parse_args()
 pathdir = args.path
@@ -90,6 +87,17 @@ imsize = args.imsize
 nocorrupt = args.nocorrupt
 corrtype = args.corrtype
 recorrupt = args.recorrupt
+skymodel_bdsf = args.skymodel_bdsf
+
+if not os.path.exists(name):
+    os.makedirs(name)
+os.chdir(name)
+
+logger_obj = lib_log.Logger('synthetics')
+logger = lib_log.logger
+sch = lib_util.Scheduler(log_dir=logger_obj.log_dir, dry = False)
+w = lib_util.Walker('synthetics.walker')
+warnings.filterwarnings('ignore', category=astropy.wcs.FITSFixedWarning)
 
 #Since we allow coordinates in degrees, we need to convert to radians for synthms
 coords = convert_coordinates(deg_coords[0], deg_coords[1])
@@ -122,6 +130,9 @@ if chanpersb > 4:
     logger.error('LoSiTo supports a maximum of 4 channels per subband.')
     sys.exit()
 
+if ('tec' in corrtype or 'fr' in corrtype) and skymodel_bdsf == False:
+    logger.error('Currently only direction-independent corruptions are supported when predicting from a .fits image. Either remove direction-dependent corruptions or specify --skymodel_bdsf in the command line.')
+    sys.exit()
 
 with w.if_todo('cleaning'):
     logger.info('Preparing the environment...')
@@ -142,12 +153,12 @@ with w.if_todo('generate_MS'):
           f'--lofarversion {version} --minfreq {freqrange[0]} --maxfreq {freqrange[1]} --chanpersb {chanpersb}', log='generateMS.log', commandType='general', processors='max')
     sch.run(check=True)
 
-logger.info('Opening empty MS files...')
+logger.info('Opening MS files...')
 MSs_empty = lib_ms.AllMSs(glob.glob(f'data/{name}*.MS'), sch, check_flags=False)
 
 with w.if_todo('empty_image'):
     logger.info('Producing empty image from initial dataset...')
-    sch.add(f'wsclean -size {imsize} {imsize} -name images/empty -scale {scale} -data-column DATA -weight briggs -1 -circular-beam -niter 100000 -no-update-model-required -mgain 0.6'
+    sch.add(f'wsclean -size {imsize} {imsize} -name images/empty -scale {scale} -data-column DATA -weight briggs -0.3 -circular-beam -niter 100000 -no-update-model-required -mgain 0.6'
           f' -baseline-averaging 10 -join-channels -fit-spectral-pol 3 -channels-out {chout} data/{name}*.MS',
           log='wsclean-empty.log', commandType='wsclean', processors='max')
     sch.run(check=True)
@@ -227,16 +238,21 @@ with w.if_todo('inject_data'):
 with w.if_todo('predict'):
 
     logger.info(f'Predicting...')
-    sch.add(f'wsclean -predict -name models/injected -channels-out {chout} data/{name}*.MS', log='predict.log', commandType='wsclean', processors='max')
+    sch.add(f'wsclean -predict -name models/injected -channels-out {chout} data/{name}*.MS', log='predict_raw.log', commandType='wsclean', processors='max')
     sch.run(check=True)
 
     MSs_empty.addcol('CLEAN_DATA', 'MODEL_DATA', log='$nameMS_addcol.log')
 
 with w.if_todo('clean_image'):
     logger.info(f'Producing image with no corruptions...')
-    sch.add(f'wsclean -size {imsize} {imsize} -name images/clean -scale {scale} -data-column CLEAN_DATA -weight briggs -1 -circular-beam -niter 100000 -no-update-model-required -mgain 0.6'
-        f' -baseline-averaging 10 -join-channels -fit-spectral-pol 3 -channels-out {chout} data/{name}*.MS',
+    sch.add(f'wsclean -size {imsize} {imsize} -name images/clean -scale {scale} -data-column CLEAN_DATA -weight briggs -0.3 -circular-beam -niter 100000 -no-update-model-required -mgain 0.6'
+        f' -baseline-averaging 4 -join-channels -fit-spectral-pol 3 -channels-out {chout} data/{name}*.MS',
         log='wsclean-clean.log', commandType='wsclean', processors='max')
+    sch.run(check=True)
+
+with w.if_todo('predict_back'):
+    logger.info(f'Predict convolved data back into model...')
+    sch.add(f'wsclean -predict -name images/clean -channels-out {chout} data/{name}*.MS', log='predict_convolved.log', commandType='wsclean', processors='max')
     sch.run(check=True)
 
 if not nocorrupt:
@@ -262,17 +278,39 @@ if not nocorrupt:
 
     msin_path = f"data/{name}*.MS"
 
-    with w.if_todo('create_skymodel'):
-    # Run PyBDSF to get a good sky model to use for corruptions
-        img = bdsf.process_image('images/clean-MFS-image.fits', rms_map=False, mean_map='zero', atrous_do = True)
-        img.write_catalog(outfile=f'skymodels/{corr_list}.skymodel', catalog_type='gaul', format='bbs', clobber=True)
-        img.export_image(outfile=f'skymodels/{corr_list}.fits', img_type='gaus_model', clobber=True)
+    if skymodel_bdsf:
+        with w.if_todo('create_skymodel'):
+        # Run PyBDSF to get a good sky model to use for corruptions
+            img = bdsf.process_image('images/clean-MFS-image.fits', rms_map=False, mean_map='zero', atrous_do = True)
+            img.write_catalog(outfile=f'skymodels/{corr_list}.skymodel', catalog_type='gaul', format='bbs', clobber=True)
+            img.export_image(outfile=f'skymodels/{corr_list}.fits', img_type='gaus_model', clobber=True)
 
-    # I need to update the msin of the parset file at each run, in losito there is no way to give it in the command line...
+    with w.if_todo('create_region'):
+        with fits.open('images/clean-MFS-image.fits') as hdul:
+            header = hdul[0].header
+
+        naxis = header['NAXIS1']  # Image width in pixels
+
+        ra_center = header['CRVAL1']  # Central RA
+        dec_center = header['CRVAL2']  # Central Dec
+
+        extent = abs(header['CDELT1'] * naxis / 2.0) # We need half the total extent since we start from the centre
+
+        region_str = create_region(ra_center, dec_center, extent*np.sqrt(2), extent, shape='polygon')
+        patch_str = f'point({ra_center}, {dec_center})  # point=boxcircle text={{Patch1}}'
+        region_str += patch_str
+        with open('region.reg', 'w') as f:
+            f.write(region_str)
+
+
     with open(f'parsets/{corr_list}.parset', "w") as file:
         new_parset_content = []
         new_parset_content.append(f"msin = {msin_path}\n")
-        new_parset_content.append(f"skymodel = skymodels/{corr_list}.skymodel\n")
+        if skymodel_bdsf:
+            new_parset_content.append(f"skymodel = skymodels/{corr_list}.skymodel\n")
+        else:
+            new_parset_content.append(f"skymodel = images/clean-MFS-image.fits\n")
+            new_parset_content.append(f"regions = region.reg\n")
         new_parset_content.append(f"\n")
 
         corruption_parset_content = []
@@ -303,7 +341,10 @@ if not nocorrupt:
         corruption_parset_content.append(f"operation = PREDICT\n")
         corruption_parset_content.append(f"outputcolumn = CORRUPTED_DATA\n")
         corruption_parset_content.append(f"resetWeights = True\n")
-        corruption_parset_content.append(f"predictType = h5parmpredict\n")
+        if skymodel_bdsf:
+            corruption_parset_content.append(f"predictType = h5parmpredict\n")
+        else:
+            corruption_parset_content.append(f"predictType = idgpredict\n")
         corruption_parset_content.append(f"\n")
 
         if 'noise' in corrtype:
@@ -327,9 +368,17 @@ if not nocorrupt:
 
     with w.if_todo('corrupted_image'):
         logger.info(f'Producing image with {corrtype} corruptions...')
-        sch.add(f'wsclean -size {imsize} {imsize} -name images/corrupted_{corr_list} -scale {scale} -data-column CORRUPTED_DATA -weight briggs -1 -circular-beam -niter 100000 -no-update-model-required -mgain 0.6'
-            f' -baseline-averaging 10 -join-channels -fit-spectral-pol 3 -channels-out {chout} data/{name}*.MS',
+        sch.add(f'wsclean -size {imsize} {imsize} -name images/corrupted_{corr_list} -scale {scale} -data-column CORRUPTED_DATA -weight briggs -0.3 -circular-beam -niter 100000 -mgain 0.6'
+            f' -join-channels -fit-spectral-pol 3 -channels-out {chout} data/{name}*.MS',
             log='wsclean-corrupted.log', commandType='wsclean', processors='max')
         sch.run(check=True)
 
+# os.system(f'mv data {name}')
+# os.system(f'mv models {name}')
+# os.system(f'mv parsets {name}')
+# os.system(f'mv skymodels {name}')
+# os.system(f'mv images {name}')
+# os.system(f'mv corruptions.h5 {name}')
+# os.system(f'mv region.reg {name}')
 
+logger.info('Done.')

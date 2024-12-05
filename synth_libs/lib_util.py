@@ -29,232 +29,58 @@ mpl.use("Agg")
 from LiLF import lib_img
 from LiLF.lib_log import logger
 
-def getParset(parsetFile=''):
-    """
-    Get parset file and return dict of values
-    """
-    def add_default(section, option, val):
-        if not config.has_option(section, option): config.set(section, option, val)
-    
-    if parsetFile == '' and os.path.exists('lilf.config'): parsetFile='lilf.config'
-    if parsetFile == '' and os.path.exists('../lilf.config'): parsetFile='../lilf.config'
-
-    config = ConfigParser(defaults=None)
-    config.read(parsetFile)
-    
-    # add pipeline sections and defaul parset dir:
-    for pipeline in glob.glob(os.path.dirname(__file__)+'/../parsets/*'):
-        pipeline = os.path.basename(pipeline)
-        if not config.has_section(pipeline): config.add_section(pipeline)
-        if not config.has_option(pipeline, 'parset_dir'):
-                config.set(pipeline, 'parset_dir', os.path.dirname(__file__)+'/../parsets/'+pipeline)
-    # add other sections
-    if not config.has_section('flag'): config.add_section('flag')
-    if not config.has_section('model'): config.add_section('model')
-    if not config.has_section('PiLL'): config.add_section('PiLL')
-
-    ### LOFAR ###
-
-    # PiLL
-    add_default('PiLL', 'working_dir', os.getcwd())
-    add_default('PiLL', 'redo_cal', 'False') # re-do the calibrator although it is in the archive
-    add_default('PiLL', 'download_file', '') # html.txt file to use instead of staging
-    add_default('PiLL', 'project', '')
-    add_default('PiLL', 'target', '')
-    add_default('PiLL', 'obsid', '') # unique ID
-    # preprocess
-    add_default('LOFAR_preprocess', 'fix_table', 'True') # fix bug in some old observations
-    add_default('LOFAR_preprocess', 'renameavg', 'True')
-    add_default('LOFAR_preprocess', 'keep_IS', 'False')
-    add_default('LOFAR_preprocess', 'backup_full_res', 'False')
-    add_default('LOFAR_preprocess', 'demix_sources', '')  # Demix  sources in these patches (e.g. [VirA,TauA], default: No demix
-    add_default('LOFAR_preprocess', 'demix_skymodel', '')  # Use non-default demix skymodel.
-    add_default('LOFAR_preprocess', 'demix_field_skymodel', 'gsm')  # Provide a custom target skymodel instead of online gsm model. Set to '' to ignore target.
-    add_default('LOFAR_preprocess', 'run_aoflagger', 'False')  # run aoflagger on individual sub-bands, only in cases where this was not one by the observatory!
-    add_default('LOFAR_preprocess', 'tar', 'False')  # Tar MS files at the end 
-    # cal
-    add_default('LOFAR_cal', 'data_dir', 'data-bkp/')
-    add_default('LOFAR_cal', 'skymodel', '') # by default use calib-simple.skydb for LBA and calib-hba.skydb for HBA
-    add_default('LOFAR_cal', 'imaging', 'False')
-    add_default('LOFAR_cal', 'fillmissingedges', 'True')
-    add_default('LOFAR_cal', 'sparse_sb', 'False') # change flagging so that we can handle data with alternating SBs only
-    add_default('LOFAR_cal', 'develop', 'False') # if true prevents the deletion of files
-    # timesplit
-    add_default('LOFAR_timesplit', 'data_dir', 'data-bkp/')
-    add_default('LOFAR_timesplit', 'cal_dir', '') # by default the repository is tested, otherwise ../obsid_3[c|C]*
-    add_default('LOFAR_timesplit', 'ngroups', '1')
-    add_default('LOFAR_timesplit', 'initc', '0')
-    add_default('LOFAR_timesplit', 'no_aoflagger', 'False') # TEST: Skip aoflagger (e.g. for observations of A-Team sources)
-    # self
-    add_default('LOFAR_ddparallel', 'maxIter', '2')
-    add_default('LOFAR_ddparallel', 'subfield', '') # possible to provide a ds9 box region customized sub-field. DEfault='' -> Automated detection using subfield_min_flux.
-    add_default('LOFAR_ddparallel', 'subfield_min_flux', '20') # min flux within calibration subfield
-    add_default('LOFAR_ddparallel', 'ph_sol_mode', 'phase') # phase or tecandphase
-    add_default('LOFAR_ddparallel', 'intrinsic', 'True')
-    # dd
-    add_default('LOFAR_ddserial', 'maxIter', '2')
-    add_default('LOFAR_ddserial', 'minCalFlux60', '0.7')
-    add_default('LOFAR_ddserial', 'solve_amp', 'True') # to disable amp sols
-    # add_default('LOFAR_ddserial', 'removeExtendedCutoff', '0.0005')
-    add_default('LOFAR_ddserial', 'target_dir', '') # ra,dec
-    add_default('LOFAR_ddserial', 'manual_ddserial_cal', '')
-    # add_default('LOFAR_ddserial', 'solve_tec', 'False') # per default, solve each dd for scalarphase. if solve_tec==True, solve for TEC instead.
-    # extract
-    add_default('LOFAR_extract', 'max_niter', '10')
-    add_default('LOFAR_extract', 'subtract_region', '') # Sources inside extract-reg that should still be subtracted! Use this e.g. for individual problematic sources in a large extractReg
-    add_default('LOFAR_extract', 'ph_sol_mode', 'phase') # tecandphase, phase
-    add_default('LOFAR_extract', 'amp_sol_mode', 'diagonal') # diagonal, fulljones
-    add_default('LOFAR_extract', 'beam_cut', '0.3') # up to which distance a pointing will be considered
-    add_default('LOFAR_extract', 'no_selfcal', 'False') # just extract the data, do not perform selfcal - use this if u want to use e.g. Reinout van Weeren's facet_seflcal script
-    add_default('LOFAR_extract', 'ampcal', 'auto')
-    add_default('LOFAR_extract', 'extractRegion', 'target.reg')
-    # quality
-    add_default('LOFAR_quality', 'self_dir', 'self')
-    add_default('LOFAR_quality', 'ddcal_dir', 'ddcal')
-    # virgo
-    add_default('LOFAR_virgo', 'cal_dir', '')
-    add_default('LOFAR_virgo', 'data_dir', './')
-    # m87
-    add_default('LOFAR_m87', 'data_dir', './')
-    add_default('LOFAR_m87', 'updateweights', 'False')
-    add_default('LOFAR_m87', 'skipmodel', 'False')
-    add_default('LOFAR_m87', 'model_dir', '')
-    # peel
-    ### uGMRT ###
-    # init - deprecated
-    #add_default('uGMRT_init', 'data_dir', './datadir')
-    # cal - deprecated
-    #add_default('uGMRT_cal', 'skymodel', os.path.dirname(__file__)+'/../models/calib-simple.skydb')
-
-    ### General ###
-
-    # flag
-    add_default('flag', 'stations', '') # LOFAR
-    add_default('flag', 'antennas', '') # uGMRT
-    # model
-    add_default('model', 'sourcedb', '')
-    add_default('model', 'fits_model', '')
-    add_default('model', 'apparent', 'False')
-    add_default('model', 'userReg', '')
-
-
-    return config
-
-def create_extregion(ra, dec, extent, color='yellow'):
+def create_region(ra, dec, extent, extent_y=None, shape='circle', color='yellow'):
     """
     Parameters
     ----------
-    ra
-    dec
-    extent
-    color
+    ra : float
+        Right Ascension in degrees.
+    dec : float
+        Declination in degrees.
+    extent : float
+        Radius for the circle or half the side length for the square (or rectangle width if extent_y is specified).
+    extent_y : float, optional
+        Half the side length for the rectangle height. If not specified, it defaults to extent.
+    shape : str, optional
+        Shape of the region: 'circle' or 'polygon'. Default is 'circle'. Currently only square or rectangle-like polygons are supported.
+    color : str, optional
+        Color of the region. Default is 'yellow'.
 
     Returns
     -------
-    DS9 region centered on ra, dec with radius = extent
+    str
+        DS9 region string centered on ra, dec with the specified shape and size.
     """
+
+    if extent_y is None:
+        extent_y = extent
 
     regtext = ['# Region file format: DS9 version 4.1']
     regtext.append(
-        f'global color={color} dashlist=8 3 width=1 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1')
+        f'global color={color} dashlist=8 3 width=1 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1'
+    )
     regtext.append('fk5')
-    regtext.append('circle(' + str(ra) + ',' + str(dec) + f',{extent})')
+
+    if shape == 'circle':
+        regtext.append(f'circle({ra},{dec},{extent})')
+    elif shape == 'polygon':
+        # Define rectangle vertices
+        vertices = [
+            (ra - extent, dec - extent_y),
+            (ra + extent, dec - extent_y),
+            (ra + extent, dec + extent_y),
+            (ra - extent, dec + extent_y),
+        ]
+        # Format the vertices into a polygon string
+        vertex_str = ','.join(f'{v[0]},{v[1]}' for v in vertices)
+        regtext.append(f'polygon({vertex_str})\n')
+    else:
+        raise ValueError("Shape must be 'circle' or 'polygon'")
+
     nline = '\n'
-    target = f"{nline}{nline.join(regtext)}"
+    region = f"{nline}{nline.join(regtext)}"
 
-    return target
-
-
-def columnAddSimilar(pathMS, columnNameNew, columnNameSimilar, dataManagerInfoNameNew, overwrite = False, fillWithOnes = True, comment = "", verbose = False):
-    # more to lib_ms
-    """
-    Add a column to a MS that is similar to a pre-existing column (in shape, but not in values).
-    pathMS:                 path of the MS
-    columnNameNew:          name of the column to be added
-    columnNameSimilar:      name of the column from which properties are copied (e.g. "DATA")
-    dataManagerInfoNameNew: string value for the data manager info (DMI) keyword "NAME" (should be unique in the MS)
-    overwrite:              whether or not to overwrite column 'columnNameNew' if it already exists
-    fillWithOnes:           whether or not to fill the newly-made column with ones
-    verbose:                whether or not to produce abundant output
-    """
-    t = tables.table(pathMS, readonly = False)
-
-    if (columnExists(t, columnNameNew) and not overwrite):
-        logger.warning("Attempt to add column '" + columnNameNew + "' aborted, as it already exists and 'overwrite = False' in columnAddSimilar(...).")
-    else: # Either the column does not exist yet, or it does but overwriting is allowed.
-
-        # Remove column if necessary.
-        if (columnExists(t, columnNameNew)):
-            logger.info("Removing column '" + columnNameNew + "'...")
-            t.removecols(columnNameNew)
-
-        # Add column.
-        columnDescription       = t.getcoldesc(columnNameSimilar)
-        dataManagerInfo         = t.getdminfo(columnNameSimilar)
-
-        if (verbose):
-            logger.debug("columnDescription:")
-            logger.debug(columnDescription)
-            logger.debug("dataManagerInfo:")
-            logger.debug(dataManagerInfo)
-
-        columnDescription["comment"] = ""
-        # What about adding something here like:
-        #columnDescription["dataManagerGroup"] = ...?
-        dataManagerInfo["NAME"]      = dataManagerInfoNameNew
-
-        if (verbose):
-            logger.debug("columnDescription (updated):")
-            logger.debug(columnDescription)
-            logger.debug("dataManagerInfo (updated):")
-            logger.debug(dataManagerInfo)
-
-        logger.info("Adding column '" + columnNameNew + "'...")
-        t.addcols(tables.makecoldesc(columnNameNew, columnDescription), dataManagerInfo)
-
-        # Fill with ones if desired.
-        if (fillWithOnes):
-            logger.info("Filling column '" + columnNameNew + "' with ones...")
-            columnDataSimilar = t.getcol(columnNameSimilar)
-            t.putcol(columnNameNew, np.ones_like(columnDataSimilar))
-
-    # Close the table to avoid that it is locked for further use.
-    t.close()
-
-
-def getCalibratorProperties():
-    """
-    Return properties of known calibrators.
-    The lists below (sorted in RA) are incomplete,
-    and should be expanded to include all calibrators that could possibly be used.
-    """
-
-    calibratorRAs           = np.array([24.4220808, 85.6505746, 123.4001379, 202.784479167, 202.8569, 212.835495, 277.3824204, 299.8681525]) # in degrees
-    calibratorDecs          = np.array([33.1597594, 49.8520094, 48.2173778,  30.509088,     25.1429,  52.202770,  48.7461556,  40.7339156])  # in degrees
-    calibratorNames         = np.array(["3C48",     "3C147",    "3C196",     "3C286",       "3C287",  "3C295",    "3C380",     "CygA"])
-
-    return calibratorRAs, calibratorDecs, calibratorNames
-
-
-def distanceOnSphere(RAs1, Decs1, RAs2, Decs2, rad=False):
-    """
-    Return the distances on the sphere from the set of points '(RAs1, Decs1)' to the
-    set of points '(RAs2, Decs2)' using the spherical law of cosines.
-
-    Using 'numpy.clip(..., -1, 1)' is necessary to counteract the effect of numerical errors, that can sometimes
-    incorrectly cause '...' to be slightly larger than 1 or slightly smaller than -1. This leads to NaNs in the arccosine.
-    """
-    if rad: # rad in rad out
-        return np.radians(np.arccos(np.clip(
-            np.sin(Decs1) * np.sin(Decs2) +
-            np.cos(Decs1) * np.cos(Decs2) *
-            np.cos(RAs1 - RAs2), -1, 1)))
-    else: # deg in deg out
-        return np.degrees(np.arccos(np.clip(
-               np.sin(np.radians(Decs1)) * np.sin(np.radians(Decs2)) +
-               np.cos(np.radians(Decs1)) * np.cos(np.radians(Decs2)) *
-               np.cos(np.radians(RAs1 - RAs2)), -1, 1)))
-
+    return region
 
 def check_rm(regexp):
     """
@@ -475,39 +301,6 @@ def run_wsclean(s, logfile, MSs_files, do_predict=False, concat_mss=False, keep_
         s.run(check=True)
     if not keep_concat:
         check_rm('wsclean_concat_*.MS')
-
-def run_DDF(s, logfile, **kwargs):
-    """
-    s : scheduler
-    args : parameters for ddfacet, "_" are replaced with "-", any parms=None is ignored.
-           To pass a parameter with no values use e.g. " no_update_model_required='' "
-    """
-    
-    ddf_parms = []
-
-    # basic parms
-    ddf_parms.append( '--Log-Boring 1 --Debug-Pdb never --Parallel-NCPU %i --Misc-IgnoreDeprecationMarking=1 ' % (s.max_processors) )
-
-    # cache dir
-    if not 'Cache_Dir' in list(kwargs.keys()):
-        ddf_parms.append( '--Cache-Dir .' )
-
-    # user defined parms
-    for parm, value in list(kwargs.items()):
-        if value is None: continue
-        if isinstance(value, str):
-            if '$' in value: # escape dollar signs (e.g. of BeamFits)
-                value = "'" + value + "'"
-        ddf_parms.append( '--%s=%s' % (parm.replace('_','-'), str(value)) )
-
-    # files
-    #wsc_parms.append( MSs_files )
-
-    # create command string
-    command_string = 'DDF.py '+' '.join(ddf_parms)
-    s.add(command_string, log=logfile, commandType='DDFacet', processors='max')
-    s.run(check=True)
-
 
 class Region_helper():
     """
@@ -887,54 +680,3 @@ class Scheduler():
             raise RuntimeError(commandType+' run problem on:\n'+out)
 
         return 0
-
-def get_template_image(reference_ra_deg, reference_dec_deg, ximsize=512, yimsize=512, cellsize_deg=0.000417, fill_val=0):
-    """
-    Make a blank image and return
-    adapted from https://github.com/darafferty/LSMTool/blob/master/lsmtool/operations_lib.py#L619
-
-    Parameters
-    ----------
-    reference_ra_deg : float
-        RA for center of output image
-    reference_dec_deg : float
-        Dec for center of output image
-    ximsize : int, optional
-        Size of output image
-    yimsize : int, optional
-        Size of output image
-    cellsize_deg : float, optional
-        Size of a pixel in degrees
-    fill_val : int, optional
-        Value with which to fill the image
-    """
-
-    # Make fits hdu
-    # Axis order is [STOKES, FREQ, DEC, RA]
-    shape_out = [yimsize, ximsize]
-    hdu = fits.PrimaryHDU(np.ones(shape_out, dtype=np.float32)*fill_val)
-    hdulist = fits.HDUList([hdu])
-    header = hdulist[0].header
-
-    # Add RA, Dec info
-    i = 1
-    header['CRVAL{}'.format(i)] = reference_ra_deg
-    header['CDELT{}'.format(i)] = -cellsize_deg
-    header['CRPIX{}'.format(i)] = ximsize / 2.0
-    header['CUNIT{}'.format(i)] = 'deg'
-    header['CTYPE{}'.format(i)] = 'RA---SIN'
-    i += 1
-    header['CRVAL{}'.format(i)] = reference_dec_deg
-    header['CDELT{}'.format(i)] = cellsize_deg
-    header['CRPIX{}'.format(i)] = yimsize / 2.0
-    header['CUNIT{}'.format(i)] = 'deg'
-    header['CTYPE{}'.format(i)] = 'DEC--SIN'
-
-    # Add equinox
-    header['EQUINOX'] = 2000.0
-
-    # Add telescope
-    header['TELESCOP'] = 'LOFAR'
-
-    hdulist[0].header = header
-    return hdulist
