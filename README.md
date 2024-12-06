@@ -27,11 +27,9 @@ For LoSiTo to work correctly, one should also add:
 The code works through a simple command line which provides all the required information to produce the synthetic observations.
 An example command could be:
 
-`python /path/to/Synthetics/synthetics.py -synth /path/to/Synthetics -p /path/to/simulation/cube -radec RA DEC`
+`python /path/to/Synthetics/synthetics.py -p /path/to/simulation/cube -radec RA DEC`
 
-These three inputs represent:
-
-`-synth`: this is simply the path to the Synthetics directory you cloned from GitHub.
+These two inputs represent:
 
 `-p`: this is the path to the simulation cube you want to start from to generate your mock observation.
 
@@ -67,6 +65,9 @@ noise, bandpass, all`. In the current version of the code, the user can specify 
 
 `--recorrupt`: Use this option if you have already finished a run and you just want to change the type of corruption to apply to the 
 visibilities.
+
+`--skymodel_bdsf`: Use this option if you wish to use PyBDSF to get the sky model, instead of predicting from a .fits image. Necessary if one wish to apply
+direction-dependent corruptions.
 
 ## Contributions
 

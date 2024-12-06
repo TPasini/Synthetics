@@ -37,12 +37,20 @@ scale = '3asec'
 ##################################################################
 
 #This is just a very general and simple synchrotron function where we assume constant density of relativistic electrons.
-def _synchrotron_emissivity(field, data):
+def _synchrotron_base(field, data):
     #n_e = data["gas", "density"]/9.11e-28 # Converting density into numeric density #TODO this is gas density, we need the relativistic electron density
     n_e = 1e-5 * cm**-3
     p = 2.5  # Power-law index (2.5 is quite typical...)
     B_perp = abs(data["gas", "magnetic_field_y"]*1e-6) #We need this 1e-6 factor because for some reason it's missing when read from within the function...
     emissivity = n_e * (B_perp** ((p+1)/2)) / G**(7/4) * erg * s**-1 * cm**-2 * cm**3 #We add the frequency dependency later because it's not in the simulation
+    return emissivity
+
+def _synchrotron_emissivity(field, data):
+    #n_e = data["gas", "density"]/9.11e-28 # Converting density into numeric density #TODO this is gas density, we need the relativistic electron density
+    n_e = (data["gas", "density"]/9.1e-28)*1e-4 # We convert from g/cm**3 to numeric density and we assume a 1e-4 factor for relativistic electrons
+    p = 2.5  # Power-law index (2.5 is quite typical...)
+    B_perp = abs(data["gas", "magnetic_field_y"]*1e-6) #We need this 1e-6 factor because for some reason it's missing when read from within the function...
+    emissivity = n_e * B_perp**2 / G**2 * erg * s**-1 * cm**-2 * cm**3 * g**-1#(B_perp** ((p+1)/2)) / G**(7/4) * erg * s**-1 * cm**-2 * cm**3 #We add the frequency dependency later because it's not in the simulation
     return emissivity
 
 def convert_coordinates(lat_deg, lon_deg):
@@ -54,7 +62,6 @@ def convert_coordinates(lat_deg, lon_deg):
 
 parser = argparse.ArgumentParser(description='Create synthetic .MS file(s) which contain the mock visibilities of the synchrotron emission derived from a simulation cube, as detected by the LOFAR telescope.')
 parser.add_argument('-p', '--path', dest='path', action='store', default='', type=str, help='Path where to look for the simulation cube.')
-parser.add_argument('-synth', '--synth', dest='synthpath', action='store', default='', type=str, help='Path to the Synthetics directory cloned from GitHub. Example: /path/to/Synthetics/')
 parser.add_argument('-radec', '--radec', dest='radec', nargs=2, type=float, default=None, help='RA/DEC of the phase centre of the generated .MS file.')
 parser.add_argument('--name', dest='name', type=str, default='simulated', help='Name of the generated .MS file.')
 parser.add_argument('--begin', dest='begin', type=float, default='60310', help='MJD starting time of the generated .MS file.')
@@ -74,7 +81,6 @@ parser.add_argument('--skymodel_bdsf', dest='skymodel_bdsf', action='store_true'
 args = parser.parse_args()
 pathdir = args.path
 deg_coords = args.radec
-synth = args.synthpath
 name = args.name
 start = args.begin
 duration = args.duration
@@ -99,7 +105,7 @@ sch = lib_util.Scheduler(log_dir=logger_obj.log_dir, dry = False)
 w = lib_util.Walker('synthetics.walker')
 warnings.filterwarnings('ignore', category=astropy.wcs.FITSFixedWarning)
 
-#Since we allow coordinates in degrees, we need to convert to radians for synthms
+#Since we want to give coordinates in degrees, we need to convert to radians for synthms
 coords = convert_coordinates(deg_coords[0], deg_coords[1])
 
 valid_elements = ["tec", "fr", "clock", "polmisalign", "beamcorrupt", "noise", "all"]
@@ -120,10 +126,6 @@ if not pathdir:
 
 if not coords:
     logger.error('Provide RA and DEC in degrees of the phase centre of the .MS file you want to generate.')
-    sys.exit()
-
-if not synth:
-    logger.error('Provide the path to the Synthetics directory cloned from GitHub.')
     sys.exit()
 
 if chanpersb > 4:
@@ -372,13 +374,5 @@ if not nocorrupt:
             f' -join-channels -fit-spectral-pol 3 -channels-out {chout} data/{name}*.MS',
             log='wsclean-corrupted.log', commandType='wsclean', processors='max')
         sch.run(check=True)
-
-# os.system(f'mv data {name}')
-# os.system(f'mv models {name}')
-# os.system(f'mv parsets {name}')
-# os.system(f'mv skymodels {name}')
-# os.system(f'mv images {name}')
-# os.system(f'mv corruptions.h5 {name}')
-# os.system(f'mv region.reg {name}')
 
 logger.info('Done.')
