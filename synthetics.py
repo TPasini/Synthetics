@@ -30,6 +30,7 @@ import math
 import bdsf
 from itertools import combinations
 from synth_libs.lib_util import create_region
+import h5py
 
 cosmo = FlatLambdaCDM(H0=70, Om0=0.3)
 scale = '3asec'
@@ -46,11 +47,66 @@ def _synchrotron_base(field, data):
     return emissivity
 
 def _synchrotron_emissivity(field, data):
-    #n_e = data["gas", "density"]/9.11e-28 # Converting density into numeric density #TODO this is gas density, we need the relativistic electron density
-    n_e = (data["gas", "density"]/9.1e-28)*1e-4 # We convert from g/cm**3 to numeric density and we assume a 1e-4 factor for relativistic electrons
-    p = 2.5  # Power-law index (2.5 is quite typical...)
-    B_perp = abs(data["gas", "magnetic_field_y"]*1e-6) #We need this 1e-6 factor because for some reason it's missing when read from within the function...
-    emissivity = n_e * B_perp**2 / G**2 * erg * s**-1 * cm**-2 * cm**3 * g**-1#(B_perp** ((p+1)/2)) / G**(7/4) * erg * s**-1 * cm**-2 * cm**3 #We add the frequency dependency later because it's not in the simulation
+    field_list = data.ds.field_list
+
+    if ("gas", "density") in field_list:
+        dens_data = data["gas", "density"]
+    else:
+        dens_key = next((f for f in field_list if f[0] == "stream" and "dens" in f[1].lower()), None)
+        if dens_key is None: raise ValueError("Campo densità non trovato!")
+        dens_data = data[dens_key]
+
+    if ("gas", "magnetic_field_y") in field_list:
+        by_data = data["gas", "magnetic_field_y"]
+    else:
+        by_key = next((f for f in field_list if f[0] == "stream" and f[1] in ["By", "magnetic_field_y", "B_y"]), None)
+        if by_key is None: raise ValueError("Campo magnetico Y non trovato!")
+        by_data = data[by_key]
+
+    n_e = (dens_data / 9.1e-28) * 1e-4
+    p = 2.5
+    B_perp = abs(by_data * 1e-6)
+    emissivity = n_e * B_perp ** 2 / G ** 2 * erg * s ** -1 * cm ** -2 * cm ** 3 * g ** -1
+    return emissivity
+
+#The following function is written in a way that relevant fields can be read from a more generic simulation.
+def _synchrotron_emissivity(field, data):
+    z = 0.1
+    cdd = 2.82e-30 * (1 + z) ** 3  # Density factor -> g/cm^3
+    cv = 2.51e9
+    cb = np.sqrt(cdd * 4 * np.pi) * cv * (1 + z) ** 0.5  # Magnetic field factor -> Gauss
+
+    n_e_rel = 1e-6 * (cm ** -3)
+
+    field_list = data.ds.field_list
+
+    if ("gas", "density") in field_list:
+        dens_raw = data["gas", "density"]
+    else:
+        dens_key = next((f for f in field_list if f[0] == "stream" and "dens" in f[1].lower()), None)
+        if not dens_key: raise ValueError("Campo Density non trovato!")
+        dens_raw = data[dens_key]
+
+    b_components = {}
+    for ax in ['x', 'y', 'z']:
+        standard_f = ("gas", f"magnetic_field_{ax}")
+        if standard_f in field_list:
+            b_components[ax] = data[standard_f]
+        else:
+            stream_f = next((f for f in field_list if f[0] == "stream" and f[1].lower() == f"b{ax}"), None)
+            if not stream_f: raise ValueError(f"Campo B{ax} non trovato!")
+            b_components[ax] = data[stream_f]
+
+    rho_g_cm3 = dens_raw * cdd
+
+    Bx_G = b_components['x'] * cb
+    By_G = b_components['y'] * cb
+    Bz_G = b_components['z'] * cb
+
+    B2 = (Bx_G ** 2 + By_G ** 2 + Bz_G ** 2)
+
+    emissivity = n_e_rel * B2 * erg * s ** -1 * cm
+
     return emissivity
 
 def convert_coordinates(lat_deg, lon_deg):
@@ -64,7 +120,7 @@ parser = argparse.ArgumentParser(description='Create synthetic .MS file(s) which
 parser.add_argument('-p', '--path', dest='path', action='store', default='', type=str, help='Path where to look for the simulation cube.')
 parser.add_argument('-radec', '--radec', dest='radec', nargs=2, type=float, default=None, help='RA/DEC of the phase centre of the generated .MS file.')
 parser.add_argument('--name', dest='name', type=str, default='simulated', help='Name of the generated .MS file.')
-parser.add_argument('--begin', dest='begin', type=float, default='60310', help='MJD starting time of the generated .MS file.')
+parser.add_argument('--begin', dest='begin', type=float, default='61400', help='MJD starting time of the generated .MS file.')
 parser.add_argument('--duration', dest='duration', type=float, default=1, help='Duration of the generated .MS file in hours. Default is 1 hour.')
 parser.add_argument('--station', dest='station', type=str, default='LBA', help='Whether to use LBA or HBA. Default is LBA.')
 parser.add_argument('--version', dest='version', type=int, default=1, help='Whether to use LOFAR or LOFAR 2.0. Default is LOFAR. Use 2 for LOFAR 2.0')
@@ -73,7 +129,7 @@ parser.add_argument('--chanpersb', dest='chanpersb', type=int, default=1, help='
 parser.add_argument('--chout', dest='chout', type=int, default=6, help='Number of output channel images in WSClean. Default is 6.')
 parser.add_argument('--imsize', dest='imsize', type=int, default=1024, help='Pixel size of images. Default is 1024.')
 parser.add_argument('--nocorrupt', dest='nocorrupt', action='store_true', help='Whether to corrupt the dataset with ionospheric delays.')
-parser.add_argument('--corruption_type', dest='corrtype', action='store', nargs='+', default='all', type=str, help='Type of corruption to apply to the dataset. Can be set to tec, fr, clock, polmisalign, beamcorrupt, noise or all, separated by spaces. Default is all.')
+parser.add_argument('--corruption_type', dest='corrtype', action='store', nargs='+', default="all", type=str, help='Type of corruption to apply to the dataset. Can be set to tec, fr, clock, polmisalign, beamcorrupt, noise or all, separated by spaces. Default is all.')
 parser.add_argument('--recorrupt', dest='recorrupt', action='store_true', help='Use this if you just want to change the type of corruption to apply, without re-running everything else.')
 parser.add_argument('--skymodel_bdsf', dest='skymodel_bdsf', action='store_true', help='Use PyBDSF to create a sky model for corruptions, instead of predicting from the initial .fits image. Only advanced users.')
 
@@ -114,11 +170,11 @@ valid_combinations = set()
 for r in range(1, len(valid_elements) + 1):  # Combina da 1 elemento fino a tutti
     valid_combinations.update(tuple(sorted(combo)) for combo in combinations(valid_elements, r))
 
-if tuple(sorted(corrtype)) not in valid_combinations:
-    logger.error(f'In {corrtype} there is an unknown corruption type. Possible values are combinations of tec, fr, clock, polmisalign, beamcorrupt, noise, or all.')
-    sys.exit()
-else:
-    logger.info(f'Corruptions for {corrtype} will be applied to the observation.')
+# if tuple(sorted(corrtype)) not in valid_combinations:
+#     logger.error(f'In {corrtype} there is an unknown corruption type. Possible values are combinations of tec, fr, clock, polmisalign, beamcorrupt, noise, or all.')
+#     sys.exit()
+# else:
+#     logger.info(f'Corruptions for {corrtype} will be applied to the observation.')
 
 if not pathdir:
     logger.error('Provide a path (-p) where to look for the simulation cube.')
@@ -151,9 +207,9 @@ with w.if_todo('cleaning'):
 
 with w.if_todo('generate_MS'):
     logger.info('Generating empty .MS files...')
-    sch.add(f'synthms --name data/{name} --start {start} --tobs {duration} --ra {coords[0]} --dec {coords[1]} --station {station} '
+    sch.add(f'synthms --name data/{name} --tobs {duration} --ra {coords[0]} --dec {coords[1]} --station {station} '
           f'--lofarversion {version} --minfreq {freqrange[0]} --maxfreq {freqrange[1]} --chanpersb {chanpersb}', log='generateMS.log', commandType='general', processors='max')
-    sch.run(check=True)
+    sch.run(check=False)
 
 logger.info('Opening MS files...')
 MSs_empty = lib_ms.AllMSs(glob.glob(f'data/{name}*.MS'), sch, check_flags=False)
@@ -166,22 +222,36 @@ with w.if_todo('empty_image'):
     sch.run(check=True)
 
 with w.if_todo('produce_injection_fits'):
+    try:
+        ds = yt.load(pathdir)
+        _ = ds.field_list
 
-    ds = yt.load(pathdir)
+    except Exception as e:
+        data_dict = {}
+        def extract_3d_datasets(name, obj):
+            if isinstance(obj, h5py.Dataset):
+                if len(obj.shape) == 3:
+                    key = name.split('/')[-1]
+                    data_dict[key] = obj[:]
 
-    ds.add_field(("gas", "synchrotron_emissivity"), function=_synchrotron_emissivity, units="erg/s/cm**2", sampling_type="local", force_override=True)
-    # mylist = ds.derived_field_list
-    # for field in mylist:
-    #     print(field)
-    # sys.exit()
+        with h5py.File(pathdir, "r") as f:
+            f.visititems(extract_3d_datasets)
 
-    #width = (50, "kpc")
+        if not data_dict:
+            logger.error("No 3D arrays found in the input file.")
+            sys.exit()
+
+        logger.info(f"Found the following fields: {list(data_dict.keys())}.")
+
+        grid_shape = list(data_dict.values())[0].shape
+        bbox = np.array([[0, 1], [0, 1], [0, 1]])
+
+        ds = yt.load_uniform_grid(data_dict, grid_shape, bbox=bbox)
+
+    ds.add_field(("gas", "synchrotron_emissivity"), function=_synchrotron_emissivity, units="erg/s/cm**2",
+                 sampling_type="local", force_override=True)
+
     resolution = (imsize, imsize)
-
-    # ad = ds.all_data()  # Seleziona l'intero volume del dataset
-    # density_data = ad["gas", "synchrotron_emissivity"]
-    # print(density_data)
-    # sys.exit()
 
     slice_plot = yt.SlicePlot(ds, "z", ("gas", "synchrotron_emissivity"))
     slice_plot.set_buff_size(resolution)
